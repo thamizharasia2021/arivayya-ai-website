@@ -180,13 +180,22 @@ View in dashboard: ${process.env.SITE_URL || 'http://localhost:3000'}/dashboard.
 }
 
 async function sendWhatsAppNotification(lead) {
-  const waNumber = process.env.WHATSAPP_NUMBER; // e.g. 917012623969
-  if (!waNumber) return;
-  // Use WhatsApp Business API or a service like Twilio
-  // For now, log the notification — replace with actual API call
+  // Supports multiple WhatsApp numbers via WHATSAPP_NUMBERS env var (comma-separated)
+  // Falls back to single WHATSAPP_NUMBER for backward compatibility
+  const numbers = (process.env.WHATSAPP_NUMBERS || process.env.WHATSAPP_NUMBER || '')
+    .split(',')
+    .map(n => n.trim())
+    .filter(Boolean);
+
+  if (!numbers.length) return;
+
   const text = `*New Enquiry* ${lead.name} — ${lead.interest || lead.source}. Phone: ${lead.phone}. Business: ${lead.business || 'N/A'}. Message: ${(lead.message || 'N/A').slice(0, 200)}`;
-  console.log(`  📱 WhatsApp notification (${waNumber}): ${text}`);
-  // TODO: Integrate WhatsApp Business API (Meta) or Twilio
+
+  for (const number of numbers) {
+    console.log(`  📱 WhatsApp notification (${number}): ${text}`);
+    // TODO: Integrate WhatsApp Business API (Meta) or Twilio
+    // When integrating, send to each number in the loop
+  }
 }
 
 async function notifyOwner(lead) {
