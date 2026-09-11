@@ -1,0 +1,77 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Enquiry Dashboard — Arivayya AI</title><meta name="description" content="Arivayya AI owner enquiry dashboard."><meta name="robots" content="noindex,nofollow,noarchive"><link rel="stylesheet" href="assets/styles.css"></head><body class="dashboard-page"><div class="dash-shell"><aside class="dash-side"><a class="brand" href="index.html"><span class="mark">A</span><span>Arivayya <span>AI</span></span></a><nav><a class="active" href="dashboard.html">Enquiries</a><a href="index.html">View website</a><a href="contact.html">Contact page</a></nav></aside><main class="dash-main"><div class="dash-top"><div><span class="tag">Lead dashboard</span><h1>Customer enquiries</h1><p style="margin:6px 0 0;color:var(--muted)">Review requests collected through the website chat and contact form.</p></div><button class="notify-btn" id="notify">Enable browser notifications</button></div><div class="stats"><div class="stat-card"><b id="total">0</b><span>Total enquiries</span></div><div class="stat-card"><b id="new-count">0</b><span>New</span></div><div class="stat-card"><b id="follow-count">0</b><span>Follow-up</span></div></div><section class="dash-panel" style="padding:0"><div class="dash-tools"><b>Enquiry list</b><input id="lead-search" type="search" placeholder="Search name, phone or business" aria-label="Search enquiries"></div><div class="lead-list" id="lead-list"></div></section><p class="notice" style="margin-top:18px">Production dashboard: enquiries are stored securely on our servers. Access is authenticated and audited.</p></main></div><script src="assets/site.js"></script><script>
+
+// ─── Authentication ──────────────────────────────────────────────────────────
+const API_BASE = '/api';
+let isAuthenticated = false;
+
+function esc(v=''){return String(v).replace(/[&<>'"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;',"'":'&#39;','"':'&quot;'}[c]))}
+
+function showLogin() {
+  document.querySelector('.dash-main').innerHTML = '<div style="display:flex;align-items:center;justify-content:center;min-height:60vh"><div style="background:#fff;border:1px solid var(--line);border-radius:var(--radius);padding:40px;width:min(400px,90vw)"><span class="tag">Owner access</span><h2 style="margin:12px 0 6px">Sign in to the dashboard</h2><p style="color:var(--muted);margin:0 0 24px">Enter your owner credentials to view leads.</p><form id="login-form"><div class="field"><label for="login-user">Username</label><input id="login-user" required autocomplete="username"></div><div class="field"><label for="login-pass">Password</label><input id="login-pass" type="password" required autocomplete="current-password"></div><button class="btn btn-primary full" type="submit">Sign in →</button><p id="login-error" style="color:#e74c3c;font-size:.9rem;margin:12px 0 0;display:none"></p></form></div></div>';
+  document.getElementById('login-form').addEventListener('submit', e => {
+    e.preventDefault();
+    const u = document.getElementById('login-user').value;
+    const p = document.getElementById('login-pass').value;
+    fetch(`${API_BASE}/auth/login`, { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({ username: u, password: p }) })
+      .then(r => r.json()).then(d => {
+        if (d.success) { isAuthenticated = true; initDashboard(); }
+        else { const el = document.getElementById('login-error'); el.textContent = d.error; el.style.display = 'block'; }
+      });
+  });
+}
+
+async function loadLeads() {
+  const params = new URLSearchParams({ page: '1', limit: '50' });
+  const r = await fetch(`${API_BASE}/dashboard/leads?${params}`, { credentials: 'same-origin' });
+  if (!r.ok) throw new Error('Failed to load leads');
+  const d = await r.json();
+  renderLeads(d);
+}
+
+function renderLeads(data) {
+  document.getElementById('total').textContent = data.stats.total;
+  document.getElementById('new-count').textContent = data.stats.new;
+  document.getElementById('follow-count').textContent = data.stats.followUp;
+  const list = document.getElementById('lead-list');
+  if (!data.leads.length) {
+    list.innerHTML = '<div class="empty-leads"><b>No enquiries yet</b><p>New website chat and contact requests will appear here automatically.</p></div>';
+    return;
+  }
+  list.innerHTML = data.leads.map(x => `<div class="lead-item ${x.read?'':'new'}" data-id="${esc(x.id)}"><div><b>${esc(x.name)}</b><small>${esc(x.phone)}</small></div><div><b>${esc(x.business||'Not provided')}</b><small>${esc(x.interest||x.source)}</small></div><div><span>${esc(x.message)}</span><small>${new Date(x.createdAt).toLocaleString()} · ${esc(x.source)}</small></div><select class="status-select" aria-label="Lead status"><option ${x.status==='New'?'selected':''}>New</option><option ${x.status==='Follow-up'?'selected':''}>Follow-up</option><option ${x.status==='Closed'?'selected':''}>Closed</option></select></div>`).join('');
+  document.querySelectorAll('.lead-item select').forEach(sel => {
+    sel.addEventListener('change', async e => {
+      const id = e.target.closest('.lead-item').dataset.id;
+      await fetch(`${API_BASE}/dashboard/leads/${id}`, { method: 'PATCH', headers: {'Content-Type':'application/json'}, credentials: 'same-origin', body: JSON.stringify({ status: e.target.value }) });
+    });
+  });
+}
+
+async function initDashboard() {
+  try {
+    await loadLeads();
+    document.getElementById('lead-search').addEventListener('input', async e => {
+      const q = e.target.value;
+      const r = await fetch(`${API_BASE}/dashboard/leads?search=${encodeURIComponent(q)}`, { credentials: 'same-origin' });
+      const d = await r.json();
+      renderLeads(d);
+    });
+    document.getElementById('notify').onclick = async () => {
+      if (!('Notification' in window)) return;
+      const p = await Notification.requestPermission();
+      showToast(p === 'granted' ? 'Notifications enabled' : 'Notification permission was not enabled');
+    };
+  } catch (err) {
+    document.getElementById('lead-list').innerHTML = '<div class="empty-leads"><b>Could not load enquiries</b><p>Please check your connection and refresh.</p></div>';
+  }
+}
+
+async function init() {
+  const r = await fetch(`${API_BASE}/auth/status`, { credentials: 'same-origin' });
+  const d = await r.json();
+  if (d.authenticated) { isAuthenticated = true; initDashboard(); }
+  else showLogin();
+}
+
+init();
+
+</script></body></html>

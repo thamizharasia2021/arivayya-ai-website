@@ -1,0 +1,57 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Gym Lead Dashboard — Arivayya AI</title><meta name="description" content="Gym owner lead dashboard for enquiries, trials, follow-ups and membership opportunities."><meta name="robots" content="noindex,nofollow,noarchive"><link rel="stylesheet" href="assets/styles.css"></head><body class="dashboard-page dash-gym"><div class="dash-shell"><aside class="dash-side"><a class="brand" href="index.html"><span class="mark">A</span><span>Arivayya <span>AI</span></span></a><nav><a class="active" href="gym-dashboard.html">Gym leads</a><a href="gym-ai.html">Gym AI page</a><a href="dashboard.html">All enquiries</a><a href="index.html">Main website</a></nav></aside><main class="dash-main"><div class="dash-top"><div><span class="tag">Gym owner workspace</span><h1>Membership opportunities</h1><p style="margin:6px 0 0;color:var(--muted)">Track enquiries, trials and follow-ups without losing the customer's context.</p></div><button class="notify-btn" id="gym-notify">Enable notifications</button></div><div class="stats"><div class="stat-card"><b id="gym-total">0</b><span>Total leads</span></div><div class="stat-card"><b id="gym-new">0</b><span>New today</span></div><div class="stat-card"><b id="gym-follow">0</b><span>Follow-ups</span></div></div><section class="dash-panel" style="padding:0"><div class="dash-tools"><div><b>Gym lead pipeline</b><small style="display:block;color:var(--muted)">Website, chat and WhatsApp-ready enquiries</small></div><input id="gym-search" type="search" placeholder="Search name, gym or interest" aria-label="Search gym leads"></div><div class="lead-list" id="gym-lead-list"></div></section><p class="notice" style="margin-top:18px">Production dashboard: secure owner login, cloud storage, branch access, shared staff follow-up and WhatsApp notifications enabled.</p></main></div><script src="assets/site.js"></script><script>
+
+const API_BASE = '/api';
+
+function esc(v=''){return String(v).replace(/[&<>'"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;',"'":'&#39;','"':'&quot;'}[c]))}
+
+function showLogin() {
+  document.querySelector('.dash-main').innerHTML = '<div style="display:flex;align-items:center;justify-content:center;min-height:60vh"><div style="background:#fff;border:1px solid var(--line);border-radius:var(--radius);padding:40px;width:min(400px,90vw)"><span class="tag">Owner access</span><h2 style="margin:12px 0 6px">Sign in to the gym dashboard</h2><p style="color:var(--muted);margin:0 0 24px">Enter your owner credentials.</p><form id="login-form"><div class="field"><label for="login-user">Username</label><input id="login-user" required autocomplete="username"></div><div class="field"><label for="login-pass">Password</label><input id="login-pass" type="password" required autocomplete="current-password"></div><button class="btn btn-primary full" type="submit">Sign in →</button><p id="login-error" style="color:#e74c3c;font-size:.9rem;margin:12px 0 0;display:none"></p></form></div></div>';
+  document.getElementById('login-form').addEventListener('submit', e => {
+    e.preventDefault();
+    const u = document.getElementById('login-user').value;
+    const p = document.getElementById('login-pass').value;
+    fetch(`${API_BASE}/auth/login`, { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({ username: u, password: p }) })
+      .then(r => r.json()).then(d => {
+        if (d.success) initGymDashboard();
+        else { const el = document.getElementById('login-error'); el.textContent = d.error; el.style.display = 'block'; }
+      });
+  });
+}
+
+async function initGymDashboard() {
+  const q = document.getElementById('gym-search').value;
+  const params = new URLSearchParams({ search: q || '', page: '1', limit: '50' });
+  const r = await fetch(`${API_BASE}/dashboard/leads?${params}`, { credentials: 'same-origin' });
+  if (!r.ok) throw new Error('Failed');
+  const d = await r.json();
+
+  document.getElementById('gym-total').textContent = d.stats.total;
+  document.getElementById('gym-new').textContent = d.stats.new;
+  document.getElementById('gym-follow').textContent = d.stats.followUp;
+
+  const list = document.getElementById('gym-lead-list');
+  if (!d.leads.length) { list.innerHTML = '<div class="empty-leads"><b>No matching gym leads</b><p>Try another search or wait for new enquiries.</p></div>'; return; }
+  list.innerHTML = d.leads.map(x => `<div class="lead-item" data-id="${esc(x.id)}"><div><b>${esc(x.name)}</b><small>${esc(x.phone)}</small><span class="lead-source">${esc(x.source)}</span></div><div><b>${esc(x.interest)}</b><small>${esc(x.business||'Branch not selected')}</small></div><div><span>${esc(x.message||'No note')}</span><small>${new Date(x.createdAt).toLocaleString()}</small><div class="quick-actions"><a href="https://wa.me/91${String(x.phone).replace(/\D/g,'').slice(-10)}" target="_blank">WhatsApp</a><a href="tel:+91${String(x.phone).replace(/\D/g,'').slice(-10)}">Call</a></div></div><select class="status-select"><option ${x.status==='New'?'selected':''}>New</option><option ${x.status==='Follow-up'?'selected':''}>Follow-up</option><option ${x.status==='Trial Booked'?'selected':''}>Trial Booked</option><option ${x.status==='Joined'?'selected':''}>Joined</option><option ${x.status==='Closed'?'selected':''}>Closed</option></select></div>`).join('');
+  document.querySelectorAll('.lead-item select').forEach(sel => {
+    sel.addEventListener('change', async e => {
+      const id = e.target.closest('.lead-item').dataset.id;
+      await fetch(`${API_BASE}/dashboard/leads/${id}`, { method: 'PATCH', headers: {'Content-Type':'application/json'}, credentials: 'same-origin', body: JSON.stringify({ status: e.target.value }) });
+    });
+  });
+}
+
+async function init() {
+  const r = await fetch(`${API_BASE}/auth/status`, { credentials: 'same-origin' });
+  const d = await r.json();
+  if (d.authenticated) initGymDashboard();
+  else showLogin();
+}
+
+document.getElementById('gym-search').addEventListener('input', () => initGymDashboard());
+document.getElementById('gym-notify').onclick = async () => {
+  if (!('Notification' in window)) return;
+  const p = await Notification.requestPermission();
+};
+init();
+
+</script></body></html>

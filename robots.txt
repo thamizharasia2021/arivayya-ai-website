@@ -1,0 +1,6 @@
+User-agent: *
+Allow: /
+Disallow: /dashboard.html
+Disallow: /gym-dashboard.html
+
+Sitemap: https://www.arivayyaai.com/sitemap.xml
